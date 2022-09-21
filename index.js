@@ -28,23 +28,25 @@ canvas.height = CanvasHeight * dpr;
 const gl = canvas.getContext('webgl2');
 
 const MousePosition = {x: CanvasWidth / 2, y: CanvasHeight / 2};
+const Particles = new Array(PARTICLE_CNT);
 const ParticlesBuffer = new Float32Array(PARTICLE_CNT * 4);
 
-function storeParticleData(i, x, y, velX, velY) {
-    ParticlesBuffer[i * 4] = x;
-    ParticlesBuffer[i * 4 + 1] = y;
-    ParticlesBuffer[i * 4 + 2] = velX;
-    ParticlesBuffer[i * 4 + 3] = velY;
-}
-
-function getParticleData(i) {
-    const index = i * 4;
-    return [ParticlesBuffer[index], ParticlesBuffer[index + 1], ParticlesBuffer[index + 2], ParticlesBuffer[index + 3]];
+function syncParticleBuffer(i) {
+    ParticlesBuffer[i * 4] = Particles[i].x;
+    ParticlesBuffer[i * 4 + 1] = Particles[i].y;
+    ParticlesBuffer[i * 4 + 2] = Particles[i].velX;
+    ParticlesBuffer[i * 4 + 3] = Particles[i].velY;
 }
 
 function init() {
     for (let i = 0; i < PARTICLE_CNT; i++) {
-        storeParticleData(i, Math.random() * CanvasWidth, Math.random() * CanvasWidth, 0, 0);
+        Particles[i] = {
+            x: Math.random() * CanvasWidth,
+            y: Math.random() * CanvasHeight,
+            velX: 0, velY: 0
+        };
+
+        syncParticleBuffer(i);
     }
 
     canvas.onmousemove = canvas.ontouchmove = (e) => {
@@ -95,7 +97,7 @@ function initGL() {
     const vertexArray = gl.createVertexArray();
     gl.bindVertexArray(vertexArray);
     gl.enableVertexAttribArray(positionAttr);
-    gl.vertexAttribPointer(positionAttr, 2, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribPointer(positionAttr, 4, gl.FLOAT, false, 0, 0);
 
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     gl.clearColor(0, 0, 0, 0);
@@ -104,14 +106,12 @@ function initGL() {
 
     gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), CanvasWidth, CanvasHeight);
 
-    gl.drawArrays(gl.POINTS, 0, PARTICLE_CNT);
+    gl.drawArrays(gl.POINTS, 0, Particles.length);
 }
 
-function animateParticle(i, g, position) {
-    let [x, y, velX, velY] = getParticleData(i);
-
-    const dx = x - position.x,
-        dy = y - position.y;
+function animateParticle(particle, g, position) {
+    const dx = particle.x - position.x,
+        dy = particle.y - position.y;
 
     const distSquare = Math.pow(dx, 2) + Math.pow(dy, 2);
 
@@ -124,31 +124,32 @@ function animateParticle(i, g, position) {
     const xForce = dx * force
         , yForce = dy * force;
 
-    velX *= Resistance;
-    velY *= Resistance;
+    particle.velX *= Resistance;
+    particle.velY *= Resistance;
 
-    velX += xForce;
-    velY += yForce;
+    particle.velX += xForce;
+    particle.velY += yForce;
 
-    x += velX;
-    y += velY;
+    particle.x += particle.velX;
+    particle.y += particle.velY;
 
-    if (x > CanvasWidth)
-        x -= CanvasWidth;
-    else if (x < 0)
-        x += CanvasWidth;
+    if (particle.x > CanvasWidth)
+        particle.x -= CanvasWidth;
+    else if (particle.x < 0)
+        particle.x += CanvasWidth;
 
-    if (y > CanvasHeight)
-        y -= CanvasHeight;
-    else if (y < 0)
-        y += CanvasHeight;
-
-    storeParticleData(i, x, y, velX, velY);
+    if (particle.y > CanvasHeight)
+        particle.y -= CanvasHeight;
+    else if (particle.y < 0)
+        particle.y += CanvasHeight;
 }
 
 function render() {
-    for (let i = 0; i < PARTICLE_CNT; i++) {
-        animateParticle(i, G, MousePosition);
+    for (let i = 0; i < Particles.length; i++) {
+        const particle = Particles[i];
+        animateParticle(particle, G, MousePosition);
+
+        syncParticleBuffer(i);
     }
 
     gl.bufferData(gl.ARRAY_BUFFER, ParticlesBuffer, gl.DYNAMIC_DRAW);
