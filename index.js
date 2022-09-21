@@ -12,20 +12,27 @@ const FPS = ~~params.fps || 60;
 const G = Number.parseFloat(params.g) || 9;
 const Resistance = Number.parseFloat(params.resistance) || 0.99;
 
+const webglCanvas = document.getElementById("webgl");
 const canvas = document.getElementById("canvas");
 
 const dpr = window.devicePixelRatio;
-const rect = canvas.getBoundingClientRect();
+const rect = webglCanvas.getBoundingClientRect();
 
 const CanvasWidth = rect.width;
 const CanvasHeight = rect.height;
+
+webglCanvas.style.width = CanvasWidth + "px";
+webglCanvas.style.height = CanvasHeight + "px";
+webglCanvas.width = CanvasWidth * dpr;
+webglCanvas.height = CanvasHeight * dpr;
 
 canvas.style.width = CanvasWidth + "px";
 canvas.style.height = CanvasHeight + "px";
 canvas.width = CanvasWidth * dpr;
 canvas.height = CanvasHeight * dpr;
 
-const gl = canvas.getContext('webgl2');
+const gl = webglCanvas.getContext("webgl2");
+const ctx = canvas.getContext("2d");
 
 const MousePosition = {x: CanvasWidth / 2, y: CanvasHeight / 2};
 const Particles = new Array(PARTICLE_CNT);
@@ -49,7 +56,7 @@ function init() {
         syncParticleBuffer(i);
     }
 
-    canvas.onmousemove = canvas.ontouchmove = (e) => {
+    webglCanvas.onmousemove = webglCanvas.ontouchmove = (e) => {
         const point = e.touches ? e.touches[0] : e
         const bcr = e.target.getBoundingClientRect();
 
@@ -59,6 +66,7 @@ function init() {
         e.preventDefault();
     }
 
+    ctx.scale(dpr, dpr);
     initGL();
 }
 
@@ -155,11 +163,12 @@ function render() {
     gl.bufferData(gl.ARRAY_BUFFER, ParticlesBuffer, gl.DYNAMIC_DRAW);
     gl.drawArrays(gl.POINTS, 0, PARTICLE_CNT);
 
-    // ctx.fillStyle = "red";
-    // ctx.beginPath();
-    // ctx.arc(MousePosition.x - MOUSE_POINT_RADIUS / 2, MousePosition.y - MOUSE_POINT_RADIUS / 2,
-    //     MOUSE_POINT_RADIUS, 0, Math.PI * 2);
-    // ctx.fill();
+    ctx.clearRect(0, 0, CanvasWidth, CanvasHeight);
+    ctx.fillStyle = "red";
+    ctx.beginPath();
+    ctx.arc(MousePosition.x - MOUSE_POINT_RADIUS / 2, MousePosition.y - MOUSE_POINT_RADIUS / 2,
+        MOUSE_POINT_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
 }
 
 const refreshTime = 1000 / FPS;
