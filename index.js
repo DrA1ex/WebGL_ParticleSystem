@@ -1,6 +1,8 @@
 const VertexShaderSource = await fetch("./shaders/vertex.glsl").then(r => r.text());
 const FragmentShaderSource = await fetch("./shaders/fragment.glsl").then(r => r.text());
 
+import * as webglUtils from "./webgl_utils.js";
+
 const urlSearchParams = new URLSearchParams(window.location.search);
 const params = Object.fromEntries(urlSearchParams.entries());
 
@@ -71,41 +73,13 @@ function init() {
 }
 
 function initGL() {
-    function _createShader(type, source) {
-        const shader = gl.createShader(type);
-        gl.shaderSource(shader, source);
-        gl.compileShader(shader);
+    const vertexShader = webglUtils.createShader(gl, gl.VERTEX_SHADER, VertexShaderSource);
+    const fragmentShader = webglUtils.createShader(gl, gl.FRAGMENT_SHADER, FragmentShaderSource);
 
-        const success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
-        if (!success) {
-            console.error(gl.getShaderInfoLog(shader));
-        }
+    const program = webglUtils.createProgram(gl, vertexShader, fragmentShader);
 
-        return shader;
-    }
-
-    const vertexShader = _createShader(gl.VERTEX_SHADER, VertexShaderSource);
-    const fragmentShader = _createShader(gl.FRAGMENT_SHADER, FragmentShaderSource);
-
-    const program = gl.createProgram();
-    gl.attachShader(program, vertexShader);
-    gl.attachShader(program, fragmentShader);
-    gl.linkProgram(program);
-
-    const success = gl.getProgramParameter(program, gl.LINK_STATUS);
-    if (!success) {
-        console.error(gl.getProgramInfoLog(program));
-    }
-
-    const positionAttr = gl.getAttribLocation(program, "a_position");
-    const positionBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer)
-    gl.bufferData(gl.ARRAY_BUFFER, ParticlesBuffer, gl.DYNAMIC_DRAW);
-
-    const vertexArray = gl.createVertexArray();
-    gl.bindVertexArray(vertexArray);
-    gl.enableVertexAttribArray(positionAttr);
-    gl.vertexAttribPointer(positionAttr, 4, gl.FLOAT, false, 0, 0);
+    const positionAttr = webglUtils.createAttribute(gl, program, "a_position");
+    webglUtils.createVertexArray(gl, positionAttr, gl.FLOAT, 4);
 
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     gl.clearColor(0, 0, 0, 0);
@@ -113,8 +87,7 @@ function initGL() {
     gl.useProgram(program);
 
     gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), CanvasWidth, CanvasHeight);
-
-    gl.drawArrays(gl.POINTS, 0, Particles.length);
+    gl.uniform1f(gl.getUniformLocation(program, "u_point_size"), dpr);
 }
 
 function animateParticle(particle, g, position) {
@@ -160,7 +133,7 @@ function render() {
         syncParticleBuffer(i);
     }
 
-    gl.bufferData(gl.ARRAY_BUFFER, ParticlesBuffer, gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, ParticlesBuffer, gl.STREAM_DRAW);
     gl.drawArrays(gl.POINTS, 0, PARTICLE_CNT);
 
     ctx.clearRect(0, 0, CanvasWidth, CanvasHeight);
