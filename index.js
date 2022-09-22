@@ -8,7 +8,8 @@ const params = Object.fromEntries(urlSearchParams.entries());
 
 const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.orientation !== undefined;
 
-const MOUSE_POINT_RADIUS = 3;
+const MOUSE_POINT_RADIUS = ~~params.mouse_size || 3;
+const SHOW_MOUSE = params.show_mouse ? Number.parseInt(params.show_mouse) : true;
 const PARTICLE_CNT = ~~params.particle_count || (isMobile ? 100000 : 200000);
 const FPS = ~~params.fps || 60;
 const G = Number.parseFloat(params.g) || 9;
@@ -136,12 +137,14 @@ function render() {
     gl.bufferData(gl.ARRAY_BUFFER, ParticlesBuffer, gl.STREAM_DRAW);
     gl.drawArrays(gl.POINTS, 0, PARTICLE_CNT);
 
-    ctx.clearRect(0, 0, CanvasWidth, CanvasHeight);
-    ctx.fillStyle = "red";
-    ctx.beginPath();
-    ctx.arc(MousePosition.x - MOUSE_POINT_RADIUS / 2, MousePosition.y - MOUSE_POINT_RADIUS / 2,
-        MOUSE_POINT_RADIUS, 0, Math.PI * 2);
-    ctx.fill();
+    if (SHOW_MOUSE) {
+        ctx.clearRect(0, 0, CanvasWidth, CanvasHeight);
+        ctx.fillStyle = "red";
+        ctx.beginPath();
+        ctx.arc(MousePosition.x - MOUSE_POINT_RADIUS / 2, MousePosition.y - MOUSE_POINT_RADIUS / 2,
+            MOUSE_POINT_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+    }
 }
 
 const refreshTime = 1000 / FPS;
