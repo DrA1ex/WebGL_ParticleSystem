@@ -1,6 +1,9 @@
 # Newtons's Gravity Law simulation
 This is a WebGL implementation of Newton's Gravity Law simulation.
 
+<img width="1335" alt="image" src="https://user-images.githubusercontent.com/1194059/191756904-a4bb5450-1605-4200-b47a-c8df6772d8a0.png">
+
+
 Demo: https://dra1ex.github.io/WebGL_ParticleSystem/
 
 ## Parameters:
