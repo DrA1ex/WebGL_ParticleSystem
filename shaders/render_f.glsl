@@ -2,9 +2,9 @@
 
 precision highp float;
 
-in vec2 a_velocity;
+in vec2 color;
 out vec4 outColor;
 
 void main() {
-    outColor = vec4(a_velocity * 0.5 + 0.5, 1, 1);
+    outColor = vec4(color * 0.5 + 0.5, 1, 1);
 }

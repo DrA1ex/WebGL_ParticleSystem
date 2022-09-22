@@ -11,10 +11,15 @@ export function createShader(gl, type, source) {
     return shader;
 }
 
-export function createProgram(gl, vertexShader, fragmentShader) {
+export function createProgram(gl, vertexShader, fragmentShader, transformFeedbacks = null) {
     const program = gl.createProgram();
     gl.attachShader(program, vertexShader);
     gl.attachShader(program, fragmentShader);
+
+    if (transformFeedbacks && transformFeedbacks.length > 0) {
+        gl.transformFeedbackVaryings(program, transformFeedbacks, gl.SEPARATE_ATTRIBS);
+    }
+
     gl.linkProgram(program);
 
     const success = gl.getProgramParameter(program, gl.LINK_STATUS);
@@ -25,19 +30,24 @@ export function createProgram(gl, vertexShader, fragmentShader) {
     return program;
 }
 
-export function createAttribute(gl, program, name) {
-    const attr = gl.getAttribLocation(program, name);
-    const attrBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, attrBuffer);
-
-    return attr;
-}
-
-export function createVertexArray(gl, attribute, type, size, stride = 0, offset = 0) {
+export function createVertexArray(gl, attributePairs, type, size, stride = 0, offset = 0) {
     const vertexArray = gl.createVertexArray();
-    gl.bindVertexArray(vertexArray);
-    gl.enableVertexAttribArray(attribute);
-    gl.vertexAttribPointer(attribute, size, type, false, stride, offset);
+    for (let i = 0; i < attributePairs.length; i++) {
+        const [attribute, buffer] = attributePairs[i];
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bindVertexArray(vertexArray);
+        gl.enableVertexAttribArray(attribute);
+        gl.vertexAttribPointer(attribute, size, type, false, stride, offset);
+    }
 
     return vertexArray;
+}
+
+export function createTransformFeedback(gl, ...buffers) {
+    const tf = gl.createTransformFeedback();
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, tf);
+    for (let i = 0; i < buffers.length; i++) {
+        gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, i, buffers[i]);
+    }
+    return tf;
 }

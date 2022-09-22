@@ -1,7 +1,10 @@
-const VertexShaderSource = await fetch("./shaders/vertex.glsl").then(r => r.text());
-const FragmentShaderSource = await fetch("./shaders/fragment.glsl").then(r => r.text());
-
 import * as webglUtils from "./webgl_utils.js";
+
+const RenderVertexShaderSource = await fetch("./shaders/render_v.glsl").then(r => r.text());
+const RenderFragmentShaderSource = await fetch("./shaders/render_f.glsl").then(r => r.text());
+
+const PhysicsVertexShaderSource = await fetch("./shaders/physics_v.glsl").then(r => r.text());
+const PhysicsFragmentShaderSource = await fetch("./shaders/physics_f.glsl").then(r => r.text());
 
 const urlSearchParams = new URLSearchParams(window.location.search);
 const params = Object.fromEntries(urlSearchParams.entries());
@@ -38,27 +41,17 @@ const gl = webglCanvas.getContext("webgl2");
 const ctx = canvas.getContext("2d");
 
 const MousePosition = {x: CanvasWidth / 2, y: CanvasHeight / 2};
-const Particles = new Array(PARTICLE_CNT);
-const ParticlesBuffer = new Float32Array(PARTICLE_CNT * 4);
 
-function syncParticleBuffer(i) {
-    ParticlesBuffer[i * 4] = Particles[i].x;
-    ParticlesBuffer[i * 4 + 1] = Particles[i].y;
-    ParticlesBuffer[i * 4 + 2] = Particles[i].velX;
-    ParticlesBuffer[i * 4 + 3] = Particles[i].velY;
-}
+const Programs = {};
+const Attributes = {};
+const Uniforms = {};
+const VertexArrays = {};
+const Buffers = {};
+const TransformFeedbacks = {};
+
+const TransformState = {};
 
 function init() {
-    for (let i = 0; i < PARTICLE_CNT; i++) {
-        Particles[i] = {
-            x: Math.random() * CanvasWidth,
-            y: Math.random() * CanvasHeight,
-            velX: 0, velY: 0
-        };
-
-        syncParticleBuffer(i);
-    }
-
     webglCanvas.onmousemove = webglCanvas.ontouchmove = (e) => {
         const point = e.touches ? e.touches[0] : e
         const bcr = e.target.getBoundingClientRect();
@@ -74,68 +67,156 @@ function init() {
 }
 
 function initGL() {
-    const vertexShader = webglUtils.createShader(gl, gl.VERTEX_SHADER, VertexShaderSource);
-    const fragmentShader = webglUtils.createShader(gl, gl.FRAGMENT_SHADER, FragmentShaderSource);
+    // Rendering
+    const renderVertexShader = webglUtils.createShader(gl, gl.VERTEX_SHADER, RenderVertexShaderSource);
+    const renderFragmentShader = webglUtils.createShader(gl, gl.FRAGMENT_SHADER, RenderFragmentShaderSource);
 
-    const program = webglUtils.createProgram(gl, vertexShader, fragmentShader);
+    Programs.render = webglUtils.createProgram(gl, renderVertexShader, renderFragmentShader);
 
-    const positionAttr = webglUtils.createAttribute(gl, program, "a_position");
-    webglUtils.createVertexArray(gl, positionAttr, gl.FLOAT, 4);
+    Attributes.render = {
+        position: gl.getAttribLocation(Programs.render, "position"),
+        velocity: gl.getAttribLocation(Programs.render, "velocity"),
+    };
 
+    Uniforms.render = {
+        resolution: gl.getUniformLocation(Programs.render, "resolution"),
+        pointSize: gl.getUniformLocation(Programs.render, "point_size")
+    };
+
+    gl.useProgram(Programs.render);
+    gl.uniform2f(Uniforms.render.resolution, CanvasWidth, CanvasHeight);
+    gl.uniform1f(Uniforms.render.pointSize, dpr);
+
+    //Physics
+    const physicsVertexShader = webglUtils.createShader(gl, gl.VERTEX_SHADER, PhysicsVertexShaderSource);
+    const physicsFragmentShader = webglUtils.createShader(gl, gl.FRAGMENT_SHADER, PhysicsFragmentShaderSource);
+
+    Programs.physics = webglUtils.createProgram(
+        gl, physicsVertexShader, physicsFragmentShader, ["next_position", "next_velocity"]);
+
+    Attributes.physics = {
+        position: gl.getAttribLocation(Programs.physics, "position"),
+        velocity: gl.getAttribLocation(Programs.physics, "velocity")
+    };
+
+    Buffers.physics = {
+        position1: gl.createBuffer(),
+        velocity1: gl.createBuffer(),
+        position2: gl.createBuffer(),
+        velocity2: gl.createBuffer(),
+    };
+
+    // Init Data
+    const positionInitial = new Float32Array(PARTICLE_CNT * 2);
+    for (let i = 0; i < PARTICLE_CNT; i++) {
+        positionInitial[i * 2] = Math.random() * CanvasWidth;
+        positionInitial[i * 2 + 1] = Math.random() * CanvasHeight;
+    }
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.physics.position1);
+    gl.bufferData(gl.ARRAY_BUFFER, positionInitial, gl.STREAM_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.physics.position2);
+    gl.bufferData(gl.ARRAY_BUFFER, positionInitial, gl.STREAM_DRAW);
+
+    const velocityInitial = new Float32Array(PARTICLE_CNT * 2);
+    gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.physics.velocity1);
+    gl.bufferData(gl.ARRAY_BUFFER, velocityInitial, gl.STREAM_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.physics.velocity2);
+    gl.bufferData(gl.ARRAY_BUFFER, velocityInitial, gl.STREAM_DRAW);
+
+    // Init VAB / TFB
+
+    VertexArrays.physics = {
+        particle1: webglUtils.createVertexArray(
+            gl, [
+                [Attributes.physics.position, Buffers.physics.position1],
+                [Attributes.physics.velocity, Buffers.physics.velocity1]
+            ], gl.FLOAT, 2
+        ),
+        particle2: webglUtils.createVertexArray(
+            gl, [
+                [Attributes.physics.position, Buffers.physics.position2],
+                [Attributes.physics.velocity, Buffers.physics.velocity2]
+            ], gl.FLOAT, 2
+        ),
+    };
+
+    VertexArrays.render = {
+        particle1: webglUtils.createVertexArray(
+            gl, [
+                [Attributes.render.position, Buffers.physics.position1],
+                [Attributes.render.velocity, Buffers.physics.velocity1]
+            ], gl.FLOAT, 2
+        ),
+        particle2: webglUtils.createVertexArray(
+            gl, [
+                [Attributes.render.position, Buffers.physics.position2],
+                [Attributes.render.velocity, Buffers.physics.velocity2]
+            ], gl.FLOAT, 2
+        ),
+    };
+
+    Uniforms.physics = {
+        attractor: gl.getUniformLocation(Programs.physics, "attractor"),
+        g: gl.getUniformLocation(Programs.physics, "g"),
+        resistance: gl.getUniformLocation(Programs.physics, "resistance"),
+        resolution: gl.getUniformLocation(Programs.physics, "resolution"),
+    };
+
+    TransformFeedbacks.physics = {
+        particle1: webglUtils.createTransformFeedback(gl, Buffers.physics.position1, Buffers.physics.velocity1),
+        particle2: webglUtils.createTransformFeedback(gl, Buffers.physics.position2, Buffers.physics.velocity2),
+    };
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, null);
+
+    TransformState.current = {
+        read: "particle1",
+        write: "particle2",
+        draw: "particle2",
+    };
+
+    TransformState.next = {
+        read: "particle2",
+        write: "particle1",
+        draw: "particle1",
+    };
+
+    // Common
     gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.useProgram(program);
-
-    gl.uniform2f(gl.getUniformLocation(program, "u_resolution"), CanvasWidth, CanvasHeight);
-    gl.uniform1f(gl.getUniformLocation(program, "u_point_size"), dpr);
-}
-
-function animateParticle(particle, g, position) {
-    const dx = particle.x - position.x,
-        dy = particle.y - position.y;
-
-    const distSquare = Math.pow(dx, 2) + Math.pow(dy, 2);
-
-    let force = 0;
-    if (distSquare >= 400) // A magic number represent min process distance
-    {
-        force = -g / distSquare;
-    }
-
-    const xForce = dx * force
-        , yForce = dy * force;
-
-    particle.velX *= Resistance;
-    particle.velY *= Resistance;
-
-    particle.velX += xForce;
-    particle.velY += yForce;
-
-    particle.x += particle.velX;
-    particle.y += particle.velY;
-
-    if (particle.x > CanvasWidth)
-        particle.x -= CanvasWidth;
-    else if (particle.x < 0)
-        particle.x += CanvasWidth;
-
-    if (particle.y > CanvasHeight)
-        particle.y -= CanvasHeight;
-    else if (particle.y < 0)
-        particle.y += CanvasHeight;
 }
 
 function render() {
-    for (let i = 0; i < Particles.length; i++) {
-        const particle = Particles[i];
-        animateParticle(particle, G, MousePosition);
+    // Physics step
+    gl.useProgram(Programs.physics);
 
-        syncParticleBuffer(i);
-    }
+    gl.bindVertexArray(VertexArrays.physics[TransformState.current.read]);
+    gl.uniform2f(Uniforms.physics.attractor, MousePosition.x, MousePosition.y);
+    gl.uniform2f(Uniforms.physics.resolution, CanvasWidth, CanvasHeight);
+    gl.uniform1f(Uniforms.physics.g, G);
+    gl.uniform1f(Uniforms.physics.resistance, Resistance);
 
-    gl.bufferData(gl.ARRAY_BUFFER, ParticlesBuffer, gl.STREAM_DRAW);
+    gl.enable(gl.RASTERIZER_DISCARD);
+
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, TransformFeedbacks.physics[TransformState.current.write]);
+    gl.beginTransformFeedback(gl.POINTS);
     gl.drawArrays(gl.POINTS, 0, PARTICLE_CNT);
+    gl.endTransformFeedback();
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+
+    gl.disable(gl.RASTERIZER_DISCARD);
+
+    // Draw step
+    gl.useProgram(Programs.render);
+    gl.bindVertexArray(VertexArrays.render[TransformState.current.draw]);
+    gl.drawArrays(gl.POINTS, 0, PARTICLE_CNT);
+
+    const temp = TransformState.current;
+    TransformState.current = TransformState.next;
+    TransformState.next = temp;
 
     if (SHOW_MOUSE) {
         ctx.clearRect(0, 0, CanvasWidth, CanvasHeight);
