@@ -210,6 +210,7 @@ function render() {
     gl.disable(gl.RASTERIZER_DISCARD);
 
     // Draw step
+    gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(Programs.render);
     gl.bindVertexArray(VertexArrays.render[TransformState.current.draw]);
     gl.drawArrays(gl.POINTS, 0, PARTICLE_CNT);
