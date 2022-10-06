@@ -42,14 +42,87 @@ const ctx = canvas.getContext("2d");
 
 const MousePosition = {x: CanvasWidth / 2, y: CanvasHeight / 2};
 
-const Programs = {};
-const Attributes = {};
-const Uniforms = {};
-const VertexArrays = {};
-const Buffers = {};
-const TransformFeedbacks = {};
+const GL = WebGL2RenderingContext;
+const CONFIGURATION1 = [
+    {
+        program: "_shared",
+        internal: true,
+        buffers: [
+            {name: "position1", usageHint: GL.STREAM_DRAW},
+            {name: "velocity1", usageHint: GL.STREAM_DRAW},
+            {name: "position2", usageHint: GL.STREAM_DRAW},
+            {name: "velocity2", usageHint: GL.STREAM_DRAW},
+        ],
+    },
+    {
+        program: "render",
+        vs: RenderVertexShaderSource,
+        fs: RenderFragmentShaderSource,
+        attributes: [
+            {name: "position"},
+            {name: "velocity"}
+        ],
+        uniforms: [
+            {type: "uniform2f", name: "resolution"},
+            {type: "uniform1f", name: "point_size"}
+        ],
+        vertexArrays: [
+            {
+                name: "particle1", entries: [
+                    {name: "position", buffer: "_shared.position1", type: gl.FLOAT, size: 2},
+                    {name: "velocity", buffer: "_shared.velocity1", type: gl.FLOAT, size: 2},
+                ]
+            }, {
+                name: "particle2", entries: [
+                    {name: "position", buffer: "_shared.position2", type: gl.FLOAT, size: 2},
+                    {name: "velocity", buffer: "_shared.velocity2", type: gl.FLOAT, size: 2},
+                ]
+            },
+        ]
+    },
+    {
+        program: "physics",
+        vs: PhysicsVertexShaderSource,
+        fs: PhysicsFragmentShaderSource,
+        tfAttributes: ["next_position", "next_velocity"],
+        attributes: [
+            {name: "position"},
+            {name: "velocity"}
+        ],
+        uniforms: [
+            {name: "g", type: "uniform1f"},
+            {name: "resistance", type: "uniform1f"},
+            {name: "resolution", type: "uniform2f"},
+            {name: "attractor", type: "uniform2f"},
+        ],
+        vertexArrays: [
+            {
+                name: "particle1", entries: [
+                    {name: "position", buffer: "_shared.position1", type: gl.FLOAT, size: 2},
+                    {name: "velocity", buffer: "_shared.velocity1", type: gl.FLOAT, size: 2},
+                ]
+            }, {
+                name: "particle2", entries: [
+                    {name: "position", buffer: "_shared.position2", type: gl.FLOAT, size: 2},
+                    {name: "velocity", buffer: "_shared.velocity2", type: gl.FLOAT, size: 2},
+                ]
+            },
+        ]
+    }
+]
+
+const CONFIGURATION2 = [
+    {
+        program: "physics",
+        transformFeedbacks: [
+            {name: "particle1", buffers: ["_shared.position1", "_shared.velocity1"]},
+            {name: "particle2", buffers: ["_shared.position2", "_shared.velocity2"]},
+        ]
+    }
+]
 
 const TransformState = {};
+const State = {};
 
 function init() {
     webglCanvas.onmousemove = webglCanvas.ontouchmove = (e) => {
@@ -67,109 +140,42 @@ function init() {
 }
 
 function initGL() {
-    // Rendering
-    const renderVertexShader = webglUtils.createShader(gl, gl.VERTEX_SHADER, RenderVertexShaderSource);
-    const renderFragmentShader = webglUtils.createShader(gl, gl.FRAGMENT_SHADER, RenderFragmentShaderSource);
+    webglUtils.createFromConfig(gl, CONFIGURATION1, State);
 
-    Programs.render = webglUtils.createProgram(gl, renderVertexShader, renderFragmentShader);
-
-    Attributes.render = {
-        position: gl.getAttribLocation(Programs.render, "position"),
-        velocity: gl.getAttribLocation(Programs.render, "velocity"),
-    };
-
-    Uniforms.render = {
-        resolution: gl.getUniformLocation(Programs.render, "resolution"),
-        pointSize: gl.getUniformLocation(Programs.render, "point_size")
-    };
-
-    gl.useProgram(Programs.render);
-    gl.uniform2f(Uniforms.render.resolution, CanvasWidth, CanvasHeight);
-    gl.uniform1f(Uniforms.render.pointSize, dpr);
-
-    //Physics
-    const physicsVertexShader = webglUtils.createShader(gl, gl.VERTEX_SHADER, PhysicsVertexShaderSource);
-    const physicsFragmentShader = webglUtils.createShader(gl, gl.FRAGMENT_SHADER, PhysicsFragmentShaderSource);
-
-    Programs.physics = webglUtils.createProgram(
-        gl, physicsVertexShader, physicsFragmentShader, ["next_position", "next_velocity"]);
-
-    Attributes.physics = {
-        position: gl.getAttribLocation(Programs.physics, "position"),
-        velocity: gl.getAttribLocation(Programs.physics, "velocity")
-    };
-
-    Buffers.physics = {
-        position1: gl.createBuffer(),
-        velocity1: gl.createBuffer(),
-        position2: gl.createBuffer(),
-        velocity2: gl.createBuffer(),
-    };
-
-    // Init Data
+    const velocityInitial = new Float32Array(PARTICLE_CNT * 2);
     const positionInitial = new Float32Array(PARTICLE_CNT * 2);
     for (let i = 0; i < PARTICLE_CNT; i++) {
         positionInitial[i * 2] = Math.random() * CanvasWidth;
         positionInitial[i * 2 + 1] = Math.random() * CanvasHeight;
     }
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.physics.position1);
-    gl.bufferData(gl.ARRAY_BUFFER, positionInitial, gl.STREAM_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.physics.position2);
-    gl.bufferData(gl.ARRAY_BUFFER, positionInitial, gl.STREAM_DRAW);
+    webglUtils.loadDataFromConfig(gl, State, [
+        {
+            program: "render",
+            uniforms: [
+                {name: "resolution", values: [CanvasWidth, CanvasHeight]},
+                {name: "point_size", values: [dpr]}
+            ],
+        },
+        {
+            program: "physics",
+            uniforms: [
+                {name: "resolution", values: [CanvasWidth, CanvasHeight]},
+            ]
+        },
+        {
+            program: "_shared",
+            linkProgram: "physics",
+            buffers: [
+                {name: "position1", data: positionInitial},
+                {name: "position2", data: positionInitial},
+                {name: "velocity1", data: velocityInitial},
+                {name: "velocity2", data: velocityInitial},
+            ]
+        }
+    ]);
 
-    const velocityInitial = new Float32Array(PARTICLE_CNT * 2);
-    gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.physics.velocity1);
-    gl.bufferData(gl.ARRAY_BUFFER, velocityInitial, gl.STREAM_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, Buffers.physics.velocity2);
-    gl.bufferData(gl.ARRAY_BUFFER, velocityInitial, gl.STREAM_DRAW);
-
-    // Init VAB / TFB
-
-    VertexArrays.physics = {
-        particle1: webglUtils.createVertexArray(
-            gl, [
-                [Attributes.physics.position, Buffers.physics.position1],
-                [Attributes.physics.velocity, Buffers.physics.velocity1]
-            ], gl.FLOAT, 2
-        ),
-        particle2: webglUtils.createVertexArray(
-            gl, [
-                [Attributes.physics.position, Buffers.physics.position2],
-                [Attributes.physics.velocity, Buffers.physics.velocity2]
-            ], gl.FLOAT, 2
-        ),
-    };
-
-    VertexArrays.render = {
-        particle1: webglUtils.createVertexArray(
-            gl, [
-                [Attributes.render.position, Buffers.physics.position1],
-                [Attributes.render.velocity, Buffers.physics.velocity1]
-            ], gl.FLOAT, 2
-        ),
-        particle2: webglUtils.createVertexArray(
-            gl, [
-                [Attributes.render.position, Buffers.physics.position2],
-                [Attributes.render.velocity, Buffers.physics.velocity2]
-            ], gl.FLOAT, 2
-        ),
-    };
-
-    Uniforms.physics = {
-        attractor: gl.getUniformLocation(Programs.physics, "attractor"),
-        g: gl.getUniformLocation(Programs.physics, "g"),
-        resistance: gl.getUniformLocation(Programs.physics, "resistance"),
-        resolution: gl.getUniformLocation(Programs.physics, "resolution"),
-    };
-
-    TransformFeedbacks.physics = {
-        particle1: webglUtils.createTransformFeedback(gl, Buffers.physics.position1, Buffers.physics.velocity1),
-        particle2: webglUtils.createTransformFeedback(gl, Buffers.physics.position2, Buffers.physics.velocity2),
-    };
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, null);
-    gl.bindBuffer(gl.TRANSFORM_FEEDBACK_BUFFER, null);
+    webglUtils.createFromConfig(gl, CONFIGURATION2, State);
 
     TransformState.current = {
         read: "particle1",
@@ -190,18 +196,24 @@ function initGL() {
 }
 
 function render() {
-    // Physics step
-    gl.useProgram(Programs.physics);
+    webglUtils.loadDataFromConfig(gl, State, [
+        {
+            program: "physics",
+            uniforms: [
+                {name: "attractor", values: [MousePosition.x, MousePosition.y]},
+                {name: "g", values: [G]},
+                {name: "resistance", values: [Resistance]}
+            ],
+        }
+    ]);
 
-    gl.bindVertexArray(VertexArrays.physics[TransformState.current.read]);
-    gl.uniform2f(Uniforms.physics.attractor, MousePosition.x, MousePosition.y);
-    gl.uniform2f(Uniforms.physics.resolution, CanvasWidth, CanvasHeight);
-    gl.uniform1f(Uniforms.physics.g, G);
-    gl.uniform1f(Uniforms.physics.resistance, Resistance);
+    // Physics step
+    gl.useProgram(State.physics.program);
+    gl.bindVertexArray(State.physics.vertexArrays[TransformState.current.read]);
 
     gl.enable(gl.RASTERIZER_DISCARD);
 
-    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, TransformFeedbacks.physics[TransformState.current.write]);
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, State.physics.transformFeedbacks[TransformState.current.write]);
     gl.beginTransformFeedback(gl.POINTS);
     gl.drawArrays(gl.POINTS, 0, PARTICLE_CNT);
     gl.endTransformFeedback();
@@ -211,8 +223,8 @@ function render() {
 
     // Draw step
     gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.useProgram(Programs.render);
-    gl.bindVertexArray(VertexArrays.render[TransformState.current.draw]);
+    gl.useProgram(State.render.program);
+    gl.bindVertexArray(State.render.vertexArrays[TransformState.current.draw]);
     gl.drawArrays(gl.POINTS, 0, PARTICLE_CNT);
 
     const temp = TransformState.current;
